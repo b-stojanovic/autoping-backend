@@ -2,13 +2,13 @@ import os
 import requests
 from dotenv import load_dotenv
 import json
-from template_map import template_map  # ← koristi tvoju strukturu
+from template_map import template_map
 from template_map import profession_to_template_type
 
 load_dotenv()
 
 INFOBIP_API_KEY = os.getenv("INFOBIP_API_KEY")
-INFOBIP_WHATSAPP_NUMBER = os.getenv("INFOBIP_WHATSAPP_NUMBER")
+INFOBIP_WHATSAPP_NUMBER = os.getenv("INFOBIP_WHATSAPP_NUMBER")  # bez '+'
 INFOBIP_BASE_URL = os.getenv("INFOBIP_BASE_URL")
 
 def send_template(phone_number: str, profession: str, stage: str = "pm_intro"):
@@ -52,20 +52,25 @@ def send_template(phone_number: str, profession: str, stage: str = "pm_intro"):
                 {"type": "QUICK_REPLY", "parameter": "Opće pitanje"}
             ]
 
+    # ⚠️ INFOBIP expects messages array
     data = {
-        "from": INFOBIP_WHATSAPP_NUMBER,
-        "to": phone_number,
-        "content": {
-            "templateName": template_name,
-            "templateData": {
-                "body": {"placeholders": ["-"]},
-                "language": "hr",
+        "messages": [
+            {
+                "from": INFOBIP_WHATSAPP_NUMBER,
+                "to": phone_number,
+                "content": {
+                    "templateName": template_name,
+                    "templateData": {
+                        "body": {"placeholders": ["-"]},
+                        "language": "hr"
+                    }
+                }
             }
-        }
+        ]
     }
 
     if buttons:
-        data["content"]["templateData"]["buttons"] = buttons
+        data["messages"][0]["content"]["templateData"]["buttons"] = buttons
 
     print(f"📤 Slanje templatea '{template_name}' na {phone_number}")
     print("📦 Payload:")
