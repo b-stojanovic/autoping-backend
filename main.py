@@ -219,3 +219,7 @@ async def receive_message(request: Request):
             print("✅ Poslan pm_confirmation i spremljeno u bazu")
 
     return {"status": "primljeno"}
+
+@app.get("/")
+async def root():
+     return {"message": "AutoPing backend is running 🚀"}
