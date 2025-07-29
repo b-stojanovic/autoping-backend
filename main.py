@@ -174,7 +174,10 @@ async def receive_message(request: Request):
     results = data.get("results", [])
     for result in results:
         message = result.get("message", {})
-        from_number = message.get("from", "").strip()
+
+        from_number = result.get("from") or message.get("from", "")
+        from_number = from_number.strip() if from_number else ""
+
         text = message.get("text", "").strip()
 
         if not from_number:
