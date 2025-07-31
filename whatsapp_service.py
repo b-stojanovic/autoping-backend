@@ -52,25 +52,25 @@ def send_template(phone_number: str, profession: str, stage: str = "pm_intro"):
                 {"type": "QUICK_REPLY", "parameter": "Opće pitanje"}
             ]
 
-    # ⚠️ INFOBIP expects messages array
     data = {
-        "messages": [
-            {
-                "from": INFOBIP_WHATSAPP_NUMBER,
-                "to": phone_number,
-                "content": {
-                    "templateName": template_name,
-                    "templateData": {
-                        "body": {"placeholders": ["-"]},
-                        "language": "hr"
-                    }
+    "messages": [
+        {
+            "from": INFOBIP_WHATSAPP_NUMBER,
+            "to": phone_number,
+            "content": {
+                "templateName": template_name,
+                "language": "hr",
+                "templateData": {
+                    "body": {"placeholders": ["-"]}
                 }
             }
-        ]
-    }
+        }
+    ]
+}
 
     if buttons:
-        data["messages"][0]["content"]["templateData"]["buttons"] = buttons
+     data["messages"][0]["content"]["templateData"]["buttons"] = buttons
+
 
     print(f"📤 Slanje templatea '{template_name}' na {phone_number}")
     print("📦 Payload:")
@@ -82,4 +82,4 @@ def send_template(phone_number: str, profession: str, stage: str = "pm_intro"):
 
 if __name__ == "__main__":
     # TEST primjer
-    send_template("+385957762291", "Frizerka / Barber", "pm_intro")
+    send_template("+385955215298", "Frizerka / Barber", "pm_intro")

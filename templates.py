@@ -2,8 +2,8 @@
 
 templates = {
     "booking_service": {
-        "pm_intro": "Pozdrav! Trenutno nismo dostupni. Da bismo mogli pomoći, molimo pošaljite nekoliko informacija.",
-        "pm_details": "Molimo pošaljite: ime i prezime, uslugu koju želite i željeni termin.\nPrimjer: Ana Kovač, šišanje i feniranje, petak 25.7. ujutro",
+        "pm_intro": "Pozdrav! Hvala na poruci 💬 Trenutno nismo dostupni, ali javit ćemo vam se čim stignemo. U međuvremenu, odaberite kako vam možemo pomoći.👇",
+        "pm_details": "Molimo vas da pošaljete:  👉 Ime i prezime  👉 Uslugu koju želite  👉 Željeni termin Primjer: Ana Kovač, šišanje i feniranje, petak 25. 7. ujutro",
         "pm_confirmation": "Hvala! Vaš zahtjev je zaprimljen. Javit ćemo Vam se uskoro za potvrdu. ✂️",
         "required_fields": ["ime i prezime", "usluga", "termin"]
     },
@@ -14,7 +14,7 @@ templates = {
         "required_fields": ["ime i prezime", "adresa", "broj stana", "problem"]
     },
     "delivery_order": {
-        "pm_intro": "Pozdrav! Hvala što ste nas kontaktirali.",
+        "pm_intro": "Pozdrav! Hvala što ste nas kontaktirali. Kako bismo odgovorili na Vaš upit, molimo pošaljite osnovne podatke.",
         "pm_details": "Molimo pošaljite: ime i prezime, proizvod koji želite, opis proizvoda i količinu.\nPrimjer: Marija Kovačić, kolač od čokolade, bez glutena, 2 komada",
         "pm_confirmation": "Vaša narudžba je zaprimljena! Javit ćemo se radi potvrde.",
         "required_fields": ["ime i prezime", "proizvod", "opis proizvoda", "količina"]
