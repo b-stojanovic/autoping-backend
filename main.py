@@ -72,7 +72,6 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str):
     if buttons:
         payload["messages"][0]["content"]["templateData"]["buttons"] = buttons
 
-    # === Debug print
     print("📨 SENDER (from):", INFOBIP_SENDER_FULL)
     print("📄 Template name koji šaljemo:", template_name)
     print("📦 PAYLOAD KOJI ŠALJEMO:")
@@ -175,7 +174,7 @@ async def receive_message(request: Request):
         print("📩 PRIMLJENA PORUKA OD:", from_number)
         print("📩 KORISNIK JE POSLAO:", text)
 
-        state = get_state(from_number)
+        state = await get_state(from_number)
         if not state:
             print("⚠️ Nema aktivnog toka u Supabase za ovog korisnika")
             continue
@@ -185,7 +184,7 @@ async def receive_message(request: Request):
 
         if state["step"] == "intro":
             priority = text if text else "opcenito"
-            update_step(from_number, "details")
+            await update_step(from_number, "details")
             await send_whatsapp_template(from_number, profession, "pm_details")
             print("✅ Poslan pm_details")
 
@@ -197,7 +196,7 @@ async def receive_message(request: Request):
                 text
             )
             await send_whatsapp_template(from_number, profession, "pm_confirmation")
-            clear_state(from_number)
+            await clear_state(from_number)
             print("✅ Poslan pm_confirmation i spremljeno u bazu")
 
     return {"status": "primljeno"}
