@@ -145,7 +145,7 @@ async def handle_missed_call(payload: dict):
         profession = res.json()[0]["profession"]
         business_id = res.json()[0]["id"]
 
-    await set_state(phone_number, profession, "intro", business_id)
+    set_state(phone_number, profession, "intro", business_id)
     await send_whatsapp_template(phone_number, profession, "pm_intro")
     return {"message": "pm_intro poslan"}
 
@@ -174,7 +174,7 @@ async def receive_message(request: Request):
         print("📩 PRIMLJENA PORUKA OD:", from_number)
         print("📩 KORISNIK JE POSLAO:", text)
 
-        state = await get_state(from_number)
+        state = get_state(from_number)
         if not state:
             print("⚠️ Nema aktivnog toka u Supabase za ovog korisnika")
             continue
@@ -184,7 +184,7 @@ async def receive_message(request: Request):
 
         if state["step"] == "intro":
             priority = text if text else "opcenito"
-            await update_step(from_number, "details")
+            update_step(from_number, "details")
             await send_whatsapp_template(from_number, profession, "pm_details")
             print("✅ Poslan pm_details")
 
@@ -196,7 +196,7 @@ async def receive_message(request: Request):
                 text
             )
             await send_whatsapp_template(from_number, profession, "pm_confirmation")
-            await clear_state(from_number)
+            clear_state(from_number)
             print("✅ Poslan pm_confirmation i spremljeno u bazu")
 
     return {"status": "primljeno"}
