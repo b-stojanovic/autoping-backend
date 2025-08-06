@@ -4,6 +4,7 @@ from datetime import datetime
 import os
 import httpx
 from template_map import template_map, profession_to_template_type
+from state_memory import set_state, get_state, update_step, clear_state
 
 load_dotenv()
 app = FastAPI()
@@ -18,10 +19,6 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 SUPABASE_TABLE = os.getenv("SUPABASE_TABLE")
 
-# === State memorija za tok po korisniku ===
-user_state = {}
-
-# === Slanje WhatsApp template poruke ===
 # === Slanje WhatsApp template poruke ===
 async def send_whatsapp_template(to_number: str, profession: str, stage: str):
     if not to_number.startswith("+"):
@@ -33,9 +30,8 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str):
 
     template_name = template_map[template_type][stage]
 
-    url = f"{INFOBIP_BASE_URL}/whatsapp/1/message/template"  # ✅ točno je, ALI traži messages array
-    INFOBIP_SENDER_FULL = INFOBIP_SENDER  # bez + !
-
+    url = f"{INFOBIP_BASE_URL}/whatsapp/1/message/template"
+    INFOBIP_SENDER_FULL = INFOBIP_SENDER
 
     headers = {
         "Authorization": f"App {INFOBIP_API_KEY}",
@@ -56,31 +52,27 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str):
             ]
 
     payload = {
-    "messages": [
-        {
-            "from": INFOBIP_SENDER_FULL,
-            "to": to_number,
-            "content": {
-                "templateName": template_name,
-                "language": "hr",
-                "templateData": {
-                    "body": {
-                        "placeholders": []
+        "messages": [
+            {
+                "from": INFOBIP_SENDER_FULL,
+                "to": to_number,
+                "content": {
+                    "templateName": template_name,
+                    "language": "hr",
+                    "templateData": {
+                        "body": {
+                            "placeholders": []
+                        }
                     }
                 }
             }
-        }
-    ]
-}
-
-
-
-
+        ]
+    }
 
     if buttons:
-     payload["messages"][0]["content"]["templateData"]["buttons"] = buttons
+        payload["messages"][0]["content"]["templateData"]["buttons"] = buttons
 
-    # === Debug printovi
+    # === Debug print
     print("📨 SENDER (from):", INFOBIP_SENDER_FULL)
     print("📄 Template name koji šaljemo:", template_name)
     print("📦 PAYLOAD KOJI ŠALJEMO:")
@@ -90,7 +82,6 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str):
         res = await client.post(url, headers=headers, json=payload)
         print(f"📤 WhatsApp {template_name} to {to_number} → {res.status_code}")
         print(res.text)
-
 
 # === Spremi zahtjev u Supabase ===
 async def save_to_supabase(phone: str, business_id: str, priority: str, message: str):
@@ -133,7 +124,7 @@ async def handle_missed_call(payload: dict):
         return {"error": "Nedostaje phone_number"}
 
     if not phone_number.startswith("+"):
-        phone_number = f"+{phone_number}"  # ✅ normalize
+        phone_number = f"+{phone_number}"
 
     headers = {
         "apikey": SUPABASE_KEY,
@@ -155,15 +146,9 @@ async def handle_missed_call(payload: dict):
         profession = res.json()[0]["profession"]
         business_id = res.json()[0]["id"]
 
-    user_state[phone_number] = {
-        "step": "intro",
-        "profession": profession,
-        "business_id": business_id
-    }
-
+    await set_state(phone_number, profession, "intro", business_id)
     await send_whatsapp_template(phone_number, profession, "pm_intro")
     return {"message": "pm_intro poslan"}
-
 
 # === Webhook za Infobip poruke ===
 @app.post("/infobip-webhook")
@@ -189,21 +174,18 @@ async def receive_message(request: Request):
 
         print("📩 PRIMLJENA PORUKA OD:", from_number)
         print("📩 KORISNIK JE POSLAO:", text)
-        print("📩 STANJE ZA TAJ BROJ:", user_state.get(from_number))
-        print("📩 SVI TRENUTNI BROJEVI U memoriji:", list(user_state.keys()))
 
-        state = user_state.get(from_number)
+        state = get_state(from_number)
         if not state:
-            print("⚠️ Nema aktivnog toka za ovog korisnika")
+            print("⚠️ Nema aktivnog toka u Supabase za ovog korisnika")
             continue
 
         profession = state.get("profession")
         business_id = state.get("business_id")
 
         if state["step"] == "intro":
-            state["priority"] = text if text else "opcenito"
-            state["step"] = "details"
-            user_state[from_number] = state
+            priority = text if text else "opcenito"
+            update_step(from_number, "details")
             await send_whatsapp_template(from_number, profession, "pm_details")
             print("✅ Poslan pm_details")
 
@@ -215,7 +197,7 @@ async def receive_message(request: Request):
                 text
             )
             await send_whatsapp_template(from_number, profession, "pm_confirmation")
-            user_state.pop(from_number, None)
+            clear_state(from_number)
             print("✅ Poslan pm_confirmation i spremljeno u bazu")
 
     return {"status": "primljeno"}
