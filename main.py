@@ -57,10 +57,10 @@ async def receive_message(request: Request):
 
     results = data.get("results", [])
     for result in results:
+        from_number = result.get("from")        # ✅ FIXED (nije u message, nego direktno u result)
         message = result.get("message", {})
-        from_number = message.get("from")
         text = message.get("text", "").strip()
-        button_payload = message.get("button", {})
+        button_payload = message.get("payload")  # ✅ FIXED quick reply payload
 
         print(f"➡️ From {from_number} | text='{text}' | button={button_payload}")
 
@@ -76,11 +76,8 @@ async def receive_message(request: Request):
 
         if button_payload:
             print("🔘 Kliknut gumb:", button_payload)
-
-            # Update state na "details"
             save_user_state(from_number, business_id, profession, "details")
 
-            # Pošalji pm_details
             await send_whatsapp_template(
                 to_number=from_number,
                 profession=profession,
@@ -91,13 +88,10 @@ async def receive_message(request: Request):
         elif step == "details" and text:
             print("📝 Dobiveni detalji od korisnika:", text)
 
-            # ⬇️ Ovdje ide logika za spremanje zahtjeva u 'requests' tablicu
-            # TODO: implementirati save_request_to_supabase(phone, business_id, text)
+            # TODO: spremi zahtjev u requests tablicu
 
-            # Obriši state jer je flow gotov
             clear_user_state(from_number)
 
-            # Pošalji pm_confirmation
             await send_whatsapp_template(
                 to_number=from_number,
                 profession=profession,
