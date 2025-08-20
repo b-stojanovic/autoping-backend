@@ -51,4 +51,9 @@ def get_template_name_by_profession(profession: str, stage: str) -> Tuple[str, s
         name = template_map[fallback_type][stage]
         ttype = fallback_type
 
+    print("✅ template_type:", template_type)
+    print("✅ stage:", stage)
+    print("✅ template_map keys:", list(template_map.keys()))
+
     return name, ttype
+
