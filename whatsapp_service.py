@@ -46,30 +46,32 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str, bu
         else:
             placeholders.append("Vaš Obrt")
 
-    # === Složi payload prema Infobip specifikaciji ===
-    body_data = {"placeholders": placeholders} if placeholders else {}
+    # === Osnovna struktura poruke ===
+    content = {
+        "templateName": template_name,
+        "templateData": {},
+        "language": "hr"
+    }
+
+    # Dodaj body SAMO ako placeholderi postoje
+    if placeholders:
+        content["templateData"]["body"] = {"placeholders": placeholders}
+
+    # Dodaj gumbe ako postoje
+    if buttons:
+        content["templateData"]["buttons"] = [
+            {"type": "QUICK_REPLY", "parameter": b} for b in buttons
+        ]
 
     payload = {
         "messages": [
             {
                 "from": INFOBIP_SENDER,
                 "to": to_number,
-                "content": {
-                    "templateName": template_name,
-                    "templateData": {
-                        "body": body_data
-                    },
-                    "language": "hr"
-                }
+                "content": content
             }
         ]
     }
-
-    # Dodaj gumbe ako postoje
-    if buttons:
-        payload["messages"][0]["content"]["templateData"]["buttons"] = [
-            {"type": "QUICK_REPLY", "parameter": b} for b in buttons
-        ]
 
     print(f"[WA][REQ] {payload}")
 
