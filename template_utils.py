@@ -1,4 +1,3 @@
-# template_utils.py
 import unicodedata
 from typing import Dict, Tuple
 from template_map import template_map, profession_to_template_type
@@ -51,9 +50,11 @@ def get_template_name_by_profession(profession: str, stage: str) -> Tuple[str, s
         name = template_map[fallback_type][stage]
         ttype = fallback_type
 
-    print("✅ template_type:", template_type)
+    # ✅ Debug printovi s ispravnom varijablom
+    print("✅ template_type:", ttype, "| stage:", stage, "| keys:", list(template_map.keys()))
     print("✅ stage:", stage)
     print("✅ template_map keys:", list(template_map.keys()))
 
     return name, ttype
+
 
