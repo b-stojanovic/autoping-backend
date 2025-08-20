@@ -1,5 +1,3 @@
-# supabase_service.py
-
 import os
 from dotenv import load_dotenv
 from supabase import create_client
@@ -43,4 +41,15 @@ def clear_user_state(phone: str):
         return response
     except Exception as e:
         print("❌ Greška pri brisanju user state:", e)
+        return None
+
+# ➕ NOVO: dohvat business zapisa po id (koristi se u whatsapp_service za placeholders)
+def get_business_by_id(business_id: str):
+    try:
+        response = supabase.table("businesses").select("*").eq("id", business_id).limit(1).execute()
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+        return None
+    except Exception as e:
+        print("❌ Greška u get_business_by_id:", e)
         return None
