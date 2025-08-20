@@ -11,15 +11,13 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-def save_request_to_supabase(phone_number, message):
-    data = {
-        "phone_number": phone_number,
-        "message": message,
-        "status": "new"
-    }
-
+def get_business_by_id(business_id: str):
     try:
-        response = supabase.table("requests").insert(data).execute()
-        print("💾 Zahtjev spremljen u Supabase:", response)
+        response = supabase.table("businesses").select("*").eq("id", business_id).execute()
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+        return None
     except Exception as e:
-        print("❌ Greška pri spremanju zahtjeva:", e)
+        print("❌ Greška u get_business_by_id:", e)
+        return None
+
