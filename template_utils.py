@@ -1,54 +1,62 @@
-# template_utils.py
-import unicodedata
-from typing import Dict, Tuple
-from template_map import template_map, profession_to_template_type
+# main.py (relevantni dijelovi)
 
-# Ako želiš da ne šalje krivi template, drži STRICT=True (raise umjesto tihog fallbacka)
-STRICT = True
+import os, json, requests
+from fastapi import FastAPI, HTTPException
+from template_utils import get_template_name_by_profession  # ✅ koristi resolver
 
-VALID_STAGES = {"pm_intro", "pm_details", "pm_confirmation"}
+app = FastAPI()
 
-def normalize(s: str) -> str:
-    s = (s or "").strip().lower()
-    # makni dijakritike
-    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
-    # sredi razmake
-    s = " ".join(s.split())
-    return s
+def _norm_phone(msisdn: str) -> str:
+    msisdn = (msisdn or "").replace(" ", "")
+    return msisdn if msisdn.startswith("+") else f"+{msisdn}"
 
-# Normalizirana mapa (ključevi su cleaned verzije onoga što dolazi iz UI-a)
-_NORM_PROF_TO_TYPE: Dict[str, str] = {normalize(k): v for k, v in profession_to_template_type.items()}
+async def send_whatsapp_template(phone_number: str, profession: str, stage: str = "pm_intro"):
+    phone_number = _norm_phone(phone_number)
 
-def resolve_template_type(profession: str) -> str:
-    key = normalize(profession)
-    ttype = _NORM_PROF_TO_TYPE.get(key)
-    if ttype:
-        return ttype
-    if STRICT:
-        raise ValueError(f"Nepoznata profesija (nema mapiranja): '{profession}'")
-    # soft fallback ako želiš da uvijek ipak pošalje nešto
-    return "booking_service_default"
-
-def get_template_name_by_profession(profession: str, stage: str) -> Tuple[str, str]:
-    """
-    Vraća (template_name, template_type) na temelju ljudskog naziva profesije i stage-a.
-    """
-    if stage not in VALID_STAGES:
-        raise ValueError(f"Unknown stage: {stage}")
-
-    ttype = resolve_template_type(profession)
-
+    # 🔑 UMJESTO: template_map[template_type][stage]
     try:
-        name = template_map[ttype][stage]
-    except KeyError as e:
-        if STRICT:
-            raise KeyError(
-                f"Nedostaje template za type='{ttype}', stage='{stage}'. "
-                f"Provjeri template_map."
-            ) from e
-        # Soft fallback: pokušaj core granu po kategoriji ili default booking
-        fallback_type = "booking_service_default"
-        name = template_map[fallback_type][stage]
-        ttype = fallback_type
+        template_name, template_type = get_template_name_by_profession(profession, stage)
+    except Exception as e:
+        # jasna poruka umjesto 500
+        raise HTTPException(status_code=400, detail=str(e))
 
-    return name, ttype
+    INFOBIP_API_KEY = os.getenv("INFOBIP_API_KEY")
+    INFOBIP_WHATSAPP_NUMBER = os.getenv("INFOBIP_WHATSAPP_NUMBER")
+    INFOBIP_BASE_URL = os.getenv("INFOBIP_BASE_URL")
+
+    url = f"{INFOBIP_BASE_URL}/whatsapp/1/message/template"
+    headers = {
+        "Authorization": f"App {INFOBIP_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messages": [{
+            "from": INFOBIP_WHATSAPP_NUMBER,
+            "to": phone_number,
+            "content": {
+                "templateName": template_name,
+                "language": "hr",
+                "templateData": {
+                    # ⚠️ ako template nema placeholdere → []
+                    "body": {"placeholders": []}
+                }
+            }
+        }]
+    }
+
+    print(f"[WA][TEMPLATE] stage={stage} type={template_type} name={template_name} → {phone_number}")
+    print("[WA][REQ]", json.dumps(payload, ensure_ascii=False))
+
+    resp = requests.post(url, headers=headers, json=payload)
+    print("[WA][RES]", resp.status_code, resp.text)
+    resp.raise_for_status()
+    return {"ok": True}
+
+# primjer handlera
+@app.post("/missed-call")
+async def handle_missed_call(payload: dict):
+    phone = payload["phone_number"]
+    profession = payload["profession"]   # "ljudsko" ime
+    # ... (tvoj session upsert itd.)
+    await send_whatsapp_template(phone, profession, "pm_intro")
+    return {"status": "intro_sent"}
