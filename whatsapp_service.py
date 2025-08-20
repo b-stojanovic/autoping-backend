@@ -37,18 +37,18 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str, bu
 
     print(f"[WA][TEMPLATE] stage={stage} type={template_type} name={template_name} → {to_number}")
 
-    # === Popuni placeholders ===
+    # === Popuni placeholders SAMO ako template očekuje ===
     placeholders = []
-    if business_id:
+    if business_id and "{{1}}" in str(template_info):
         business = get_business_by_id(business_id)
         if business and business.get("name"):
-            placeholders.append(business["name"])  # ✅ sad je business.name, ne profession
+            placeholders.append(business["name"])
         else:
             placeholders.append("Vaš Obrt")
-    else:
-        placeholders.append("Vaš Obrt")
 
     # === Složi payload prema Infobip specifikaciji ===
+    body_data = {"placeholders": placeholders} if placeholders else {}
+
     payload = {
         "messages": [
             {
@@ -57,7 +57,7 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str, bu
                 "content": {
                     "templateName": template_name,
                     "templateData": {
-                        "body": {"placeholders": placeholders}
+                        "body": body_data
                     },
                     "language": "hr"
                 }
@@ -88,4 +88,3 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str, bu
         print(f"[WA][RES] {resp.status_code} {resp.text}")
         resp.raise_for_status()
         return resp.json()
-
