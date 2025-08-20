@@ -23,17 +23,17 @@ template_map = {
 
 profession_to_template_type = {
     # Booking services
-    "Frizerka / Barber": "booking_service",
-    "Kozmetičarka": "booking_service",
-    "Groomer za pse": "booking_service",
-    "Masažer / Terapeut": "booking_service",
-    "Pediker / Maniker": "booking_service",
-    "Tatoo majstor": "booking_service",
-    "Privatni fitness trener": "booking_service",
-    "Depilacija / Lash & brow tech": "booking_service",
-    "Šminker / MUA": "booking_service",
-    "AutoDetailing": "booking_service",
-    "Cvjećarna": "booking_service",
+    "Frizerka / Barber": "booking_service_default",
+    "Kozmetičarka": "booking_service_beauty",
+    "Groomer za pse": "booking_service_groomer",
+    "Masažer / Terapeut": "booking_service_massage",
+    "Pediker / Maniker": "booking_service_nails",
+    "Tatoo majstor": "booking_service_tattoo",
+    "Privatni fitness trener": "booking_service_fitness",
+    "Depilacija / Lash & brow tech": "booking_service_beauty",
+    "Šminker / MUA": "booking_service_makeup",
+    "AutoDetailing": "booking_service_autodetail",
+    "Cvjećarna": "booking_service_flower_shop",
 
     # Emergency repair
     "Upravnik zgrade": "emergency_repair",
@@ -57,3 +57,4 @@ profession_to_template_type = {
     "OPG": "delivery_order",
     "Pečenjarnica / Catering": "delivery_order",
 }
+
