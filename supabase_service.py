@@ -9,8 +9,21 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
+# ========================
+# Utils
+# ========================
+
+def _norm_phone(msisdn: str) -> str:
+    msisdn = (msisdn or "").replace(" ", "")
+    return msisdn if msisdn.startswith("+") else f"+{msisdn}"
+
+# ========================
+# User state functions
+# ========================
+
 def save_user_state(phone: str, business_id: str, profession: str, step: str):
     try:
+        phone = _norm_phone(phone)  # ✅ uvijek sa +
         data = {
             "phone": phone,
             "business_id": business_id,
@@ -26,6 +39,7 @@ def save_user_state(phone: str, business_id: str, profession: str, step: str):
 
 def get_user_state(phone: str):
     try:
+        phone = _norm_phone(phone)  # ✅ osiguraj da je isti format
         response = supabase.table("user_states").select("*").eq("phone", phone).order("created_at", desc=True).limit(1).execute()
         if response.data and len(response.data) > 0:
             return response.data[0]
@@ -36,6 +50,7 @@ def get_user_state(phone: str):
 
 def clear_user_state(phone: str):
     try:
+        phone = _norm_phone(phone)  # ✅ normaliziraj prije brisanja
         response = supabase.table("user_states").delete().eq("phone", phone).execute()
         print("🧹 User state obrisan:", response)
         return response
@@ -43,7 +58,10 @@ def clear_user_state(phone: str):
         print("❌ Greška pri brisanju user state:", e)
         return None
 
-# ➕ NOVO: dohvat business zapisa po id (koristi se u whatsapp_service za placeholders)
+# ========================
+# Business fetch
+# ========================
+
 def get_business_by_id(business_id: str):
     try:
         response = supabase.table("businesses").select("*").eq("id", business_id).limit(1).execute()
