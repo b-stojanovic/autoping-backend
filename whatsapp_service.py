@@ -2,7 +2,8 @@ import os
 import httpx
 from dotenv import load_dotenv
 from template_map import template_map, profession_to_template_type
-from supabase_service import get_business_by_id  # ➡️ dohvatimo business iz baze
+from supabase_service import get_user_state
+
 
 load_dotenv()
 
@@ -15,19 +16,14 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str, bu
     if not to_number.startswith("+"):
         to_number = f"+{to_number}"
 
-    # Dohvati tip templatea prema profesiji
     template_type = profession_to_template_type.get(profession)
     if not template_type:
         raise ValueError(f"Nepoznata profession: {profession}")
 
-    # Dohvati template info
     template_info = template_map.get(template_type, {}).get(stage)
     if not template_info:
-        raise ValueError(
-            f"Nedostaje template za type='{template_type}', stage='{stage}'. Provjeri template_map."
-        )
+        raise ValueError(f"Nedostaje template za type='{template_type}', stage='{stage}'")
 
-    # Ako je samo string (stari način), pretvori u dict
     if isinstance(template_info, str):
         template_name = template_info
         buttons = []
@@ -36,6 +32,56 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str, bu
         buttons = template_info.get("buttons", [])
 
     print(f"[WA][TEMPLATE] stage={stage} type={template_type} name={template_name} → {to_number}")
+
+    # === Popuni placeholders ===
+    placeholders = []
+    if business_id:
+        # Ako želiš i dalje ime obrta, možeš dohvatiti ga iz user_states
+        state = get_user_state(to_number)
+        if state and state.get("profession"):
+            placeholders.append(state["profession"])
+    else:
+        placeholders.append("Vaš Obrt")
+
+    payload = {
+        "messages": [
+            {
+                "from": INFOBIP_SENDER,
+                "to": to_number,
+                "content": {
+                    "templateName": template_name,
+                    "templateData": {
+                        "body": {"placeholders": placeholders}
+                    },
+                    "language": "hr"
+                }
+            }
+        ]
+    }
+
+    if buttons:
+        payload["messages"][0]["content"]["templateData"]["buttons"] = [
+            {"type": "QUICK_REPLY", "parameter": b} for b in buttons
+        ]
+
+    print(f"[WA][REQ] {payload}")
+
+    headers = {
+        "Authorization": f"App {INFOBIP_API_KEY}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{INFOBIP_BASE_URL}/whatsapp/1/message/template",
+            headers=headers,
+            json=payload,
+        )
+        print(f"[WA][RES] {resp.status_code} {resp.text}")
+        resp.raise_for_status()
+        return resp.json()
+
 
     # === Dohvati business_name za placeholder ===
     placeholders = []
