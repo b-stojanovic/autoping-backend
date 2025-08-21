@@ -2,7 +2,7 @@ import os
 import json
 from fastapi import FastAPI, HTTPException, Request
 from whatsapp_service import send_whatsapp_template
-from supabase_service import save_user_state, get_user_state, clear_user_state, get_business_by_id, save_request_to_supabase
+from supabase_service import save_user_state, get_user_state, clear_user_state, get_business_by_id
 
 app = FastAPI()
 
@@ -61,10 +61,10 @@ async def receive_message(request: Request):
 
     results = data.get("results", [])
     for result in results:
-        from_number = result.get("from")        # ✅ broj dolazi direktno u result
+        from_number = result.get("from")        # ✅ FIXED (nije u message, nego direktno u result)
         message = result.get("message", {})
         text = message.get("text", "").strip()
-        button_payload = message.get("payload")  # ✅ quick reply payload
+        button_payload = message.get("payload")  # ✅ FIXED quick reply payload
 
         print(f"➡️ From {from_number} | text='{text}' | button={button_payload}")
 
@@ -78,33 +78,28 @@ async def receive_message(request: Request):
         business_id = state["business_id"]
         step = state["step"]
 
-        # === Step 1: Button kliknut ===
         if button_payload:
             print("🔘 Kliknut gumb:", button_payload)
+
+            # ➡️ Spremi novi state (ali zadrži pravi profession i business_id iz statea!)
             save_user_state(from_number, business_id, profession, "details")
 
+            # ➡️ Pošalji details poruku
             await send_whatsapp_template(
                 to_number=from_number,
-                profession=profession,
+                profession=profession,   # ✅ sad se koristi pravi profession
                 stage="pm_details"
             )
 
-        # === Step 2: Korisnik šalje detalje ===
         elif step == "details" and text:
             print("📝 Dobiveni detalji od korisnika:", text)
 
-            # ✅ Spremi zahtjev u requests tablicu
-            save_request_to_supabase(
-                phone_number=from_number,
-                business_id=business_id,
-                profession=profession,
-                message=text
-            )
+            # TODO: spremi zahtjev u requests tablicu
 
-            # ➡️ Očisti state
+            # ➡️ brišemo state jer je flow završen
             clear_user_state(from_number)
 
-            # ➡️ Pošalji confirmation
+            # ➡️ Pošalji confirmation poruku
             await send_whatsapp_template(
                 to_number=from_number,
                 profession=profession,
