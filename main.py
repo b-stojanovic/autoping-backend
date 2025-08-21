@@ -2,7 +2,8 @@ import os
 import json
 from fastapi import FastAPI, HTTPException, Request
 from whatsapp_service import send_whatsapp_template
-from supabase_service import save_user_state, get_user_state, clear_user_state, get_business_by_id
+from state_memory import set_state, get_state, update_step, clear_state
+from supabase_service import get_business_by_id
 
 app = FastAPI()
 
@@ -33,8 +34,8 @@ async def handle_missed_call(payload: dict):
     if not phone or not profession or not business_id:
         raise HTTPException(status_code=400, detail="Missing phone_number, business_id or profession")
 
-    # ➡️ Snimi state u Supabase
-    save_user_state(phone, business_id, profession, "intro")
+    # ➡️ Snimi state u Supabase (intro stage)
+    set_state(phone, profession, "intro", business_id)
 
     # ➡️ Dohvati ime obrta
     business = get_business_by_id(business_id)
@@ -61,15 +62,15 @@ async def receive_message(request: Request):
 
     results = data.get("results", [])
     for result in results:
-        from_number = result.get("from")        # ✅ FIXED (nije u message, nego direktno u result)
+        from_number = result.get("from")
         message = result.get("message", {})
         text = message.get("text", "").strip()
-        button_payload = message.get("payload")  # ✅ FIXED quick reply payload
+        button_payload = message.get("payload")
 
         print(f"➡️ From {from_number} | text='{text}' | button={button_payload}")
 
         # ➡️ Dohvati state iz Supabase
-        state = get_user_state(from_number)
+        state = get_state(from_number)
         if not state:
             print("⚠️ Nema state-a za", from_number)
             continue
@@ -80,14 +81,12 @@ async def receive_message(request: Request):
 
         if button_payload:
             print("🔘 Kliknut gumb:", button_payload)
+            # ✅ samo update step, nemoj resetirati state
+            update_step(from_number, "details")
 
-            # ➡️ Spremi novi state (ali zadrži pravi profession i business_id iz statea!)
-            save_user_state(from_number, business_id, profession, "details")
-
-            # ➡️ Pošalji details poruku
             await send_whatsapp_template(
                 to_number=from_number,
-                profession=profession,   # ✅ sad se koristi pravi profession
+                profession=profession,
                 stage="pm_details"
             )
 
@@ -96,14 +95,12 @@ async def receive_message(request: Request):
 
             # TODO: spremi zahtjev u requests tablicu
 
-            # ➡️ brišemo state jer je flow završen
-            clear_user_state(from_number)
+            clear_state(from_number)
 
-            # ➡️ Pošalji confirmation poruku
             await send_whatsapp_template(
                 to_number=from_number,
                 profession=profession,
                 stage="pm_confirmation"
             )
 
-    return {"status": "ok"}
+    return {"status": "webhook_processed"}
