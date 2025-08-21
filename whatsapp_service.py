@@ -12,8 +12,8 @@ INFOBIP_SENDER = os.getenv("INFOBIP_WHATSAPP_NUMBER")
 
 # === Slanje WhatsApp template poruke ===
 async def send_whatsapp_template(to_number: str, profession: str, stage: str, business_id: str = None):
-    if not to_number.startswith("+"):
-        to_number = f"+{to_number}"
+    # Infobip bolje podnosi bez "+"
+    clean_number = to_number.replace("+", "")
 
     # Dohvati tip templatea prema profesiji
     template_type = profession_to_template_type.get(profession)
@@ -50,7 +50,7 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str, bu
     content = {
         "templateName": template_name,
         "templateData": {
-            "body": {"placeholders": placeholders or []},   # uvijek postoji body
+            "body": {"placeholders": placeholders or []}
         },
         "language": {
             "policy": "deterministic",
@@ -68,7 +68,8 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str, bu
         "messages": [
             {
                 "from": INFOBIP_SENDER,
-                "to": to_number,
+                "to": clean_number,   # bez +
+                "messageId": f"autoping-{clean_number}",  # custom ID
                 "content": content
             }
         ]
