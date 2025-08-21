@@ -1,5 +1,6 @@
 import os
 import httpx
+import json
 from dotenv import load_dotenv
 from template_map import template_map, profession_to_template_type
 from supabase_service import get_business_by_id  # koristimo da dohvatimo ime obrta
@@ -46,16 +47,13 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str, bu
         else:
             placeholders.append("Vaš Obrt")
 
-    # === Osnovna struktura poruke ===
+    # === Osnovna struktura poruke (100% prema odobrenom Infobip templateu) ===
     content = {
         "templateName": template_name,
         "templateData": {
             "body": {"placeholders": placeholders or []}
         },
-        "language": {
-            "policy": "deterministic",
-            "code": "hr"
-        }
+        "language": "hr"   # 👈 plain string jer tako stoji u odobrenom templateu
     }
 
     # Dodaj gumbe ako postoje
@@ -75,7 +73,8 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str, bu
         ]
     }
 
-    print(f"[WA][REQ] {payload}")
+    print("[WA][REQ] Payload koji šaljemo Infobipu:")
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
 
     headers = {
         "Authorization": f"App {INFOBIP_API_KEY}",
@@ -90,5 +89,9 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str, bu
             json=payload,
         )
         print(f"[WA][RES] {resp.status_code} {resp.text}")
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            print("❌ Infobip error:", e, resp.text)
+            raise
         return resp.json()
