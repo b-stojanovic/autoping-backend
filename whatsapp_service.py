@@ -37,7 +37,7 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str, bu
 
     print(f"[WA][TEMPLATE] stage={stage} type={template_type} name={template_name} → {to_number}")
 
-    # === Popuni placeholders SAMO ako template očekuje ===
+    # === Placeholderi (ako postoje) ===
     placeholders = []
     if business_id and "{{1}}" in str(template_info):
         business = get_business_by_id(business_id)
@@ -49,13 +49,14 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str, bu
     # === Osnovna struktura poruke ===
     content = {
         "templateName": template_name,
-        "templateData": {},
-        "language": "hr"
+        "templateData": {
+            "body": {"placeholders": placeholders or []},   # uvijek postoji body
+        },
+        "language": {
+            "policy": "deterministic",
+            "code": "hr"
+        }
     }
-
-    # Dodaj body SAMO ako placeholderi postoje
-    if placeholders:
-        content["templateData"]["body"] = {"placeholders": placeholders}
 
     # Dodaj gumbe ako postoje
     if buttons:
