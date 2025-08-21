@@ -2,7 +2,7 @@ import os
 import json
 from fastapi import FastAPI, HTTPException, Request
 from whatsapp_service import send_whatsapp_template
-from supabase_service import save_user_state, get_user_state, clear_user_state
+from supabase_service import save_user_state, get_user_state, clear_user_state, get_business_by_id
 
 app = FastAPI()
 
@@ -36,15 +36,19 @@ async def handle_missed_call(payload: dict):
     # ➡️ Snimi state u Supabase
     save_user_state(phone, business_id, profession, "intro")
 
-    # ➡️ Pošalji intro poruku
+    # ➡️ Dohvati ime obrta
+    business = get_business_by_id(business_id)
+    business_name = business["name"] if business else "Naš obrt"
+
+    # ➡️ Pošalji intro poruku (s imenom za placeholder {{1}})
     await send_whatsapp_template(
         to_number=_norm_phone(phone),
         profession=profession,
         stage="pm_intro",
-        business_id=business_id
+        placeholders=[business_name]  # ✅ ime obrta u poruci
     )
 
-    return {"status": "intro_sent", "profession": profession, "phone_number": phone}
+    return {"status": "intro_sent", "profession": profession, "phone_number": phone, "business_name": business_name}
 
 # ========================
 # Endpoint: Infobip webhook
@@ -81,8 +85,7 @@ async def receive_message(request: Request):
             await send_whatsapp_template(
                 to_number=from_number,
                 profession=profession,
-                stage="pm_details",
-                business_id=business_id
+                stage="pm_details"
             )
 
         elif step == "details" and text:
@@ -95,8 +98,5 @@ async def receive_message(request: Request):
             await send_whatsapp_template(
                 to_number=from_number,
                 profession=profession,
-                stage="pm_confirmation",
-                business_id=business_id
+                stage="pm_confirmation"
             )
-
-    return {"status": "primljeno"}

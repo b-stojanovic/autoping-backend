@@ -1,5 +1,3 @@
-# whatsapp_service.py
-
 import os
 import httpx
 from dotenv import load_dotenv
@@ -12,7 +10,7 @@ INFOBIP_BASE_URL = os.getenv("INFOBIP_BASE_URL")
 INFOBIP_SENDER = os.getenv("INFOBIP_WHATSAPP_NUMBER")
 
 # === Slanje WhatsApp template poruke ===
-async def send_whatsapp_template(to_number: str, profession: str, stage: str):
+async def send_whatsapp_template(to_number: str, profession: str, stage: str, placeholders: list = None):
     if not to_number.startswith("+"):
         to_number = f"+{to_number}"
 
@@ -40,7 +38,7 @@ async def send_whatsapp_template(to_number: str, profession: str, stage: str):
 
     # === Složi payload prema Infobip specifikaciji ===
     template_data = {
-        "body": {"placeholders": []}
+        "body": {"placeholders": placeholders or []}  # ✅ ubaci ime obrta ili prazno
     }
 
     # Dodaj gumbe ako postoje

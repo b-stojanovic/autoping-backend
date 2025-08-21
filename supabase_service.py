@@ -40,7 +40,8 @@ def save_user_state(phone: str, business_id: str, profession: str, step: str):
 def get_user_state(phone: str):
     try:
         phone = _norm_phone(phone)  # ✅ osiguraj da je isti format
-        response = supabase.table("user_states").select("*").eq("phone", phone).order("created_at", desc=True).limit(1).execute()
+        # ⚠️ maknuli order(created_at) jer možda kolona ne postoji
+        response = supabase.table("user_states").select("*").eq("phone", phone).limit(1).execute()
         if response.data and len(response.data) > 0:
             return response.data[0]
         return None
