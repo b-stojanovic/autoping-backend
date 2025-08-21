@@ -2,7 +2,7 @@ import os
 import json
 from fastapi import FastAPI, HTTPException, Request
 from whatsapp_service import send_whatsapp_template
-from supabase_service import save_user_state, get_user_state, clear_user_state, get_business_by_id
+from supabase_service import save_user_state, get_user_state, clear_user_state, get_business_by_id, save_request_to_supabase
 
 app = FastAPI()
 
@@ -61,10 +61,10 @@ async def receive_message(request: Request):
 
     results = data.get("results", [])
     for result in results:
-        from_number = result.get("from")        # ✅ FIXED (nije u message, nego direktno u result)
+        from_number = result.get("from")        # ✅ broj dolazi direktno u result
         message = result.get("message", {})
         text = message.get("text", "").strip()
-        button_payload = message.get("payload")  # ✅ FIXED quick reply payload
+        button_payload = message.get("payload")  # ✅ quick reply payload
 
         print(f"➡️ From {from_number} | text='{text}' | button={button_payload}")
 
@@ -78,6 +78,7 @@ async def receive_message(request: Request):
         business_id = state["business_id"]
         step = state["step"]
 
+        # === Step 1: Button kliknut ===
         if button_payload:
             print("🔘 Kliknut gumb:", button_payload)
             save_user_state(from_number, business_id, profession, "details")
@@ -88,15 +89,26 @@ async def receive_message(request: Request):
                 stage="pm_details"
             )
 
+        # === Step 2: Korisnik šalje detalje ===
         elif step == "details" and text:
             print("📝 Dobiveni detalji od korisnika:", text)
 
-            # TODO: spremi zahtjev u requests tablicu
+            # ✅ Spremi zahtjev u requests tablicu
+            save_request_to_supabase(
+                phone_number=from_number,
+                business_id=business_id,
+                profession=profession,
+                message=text
+            )
 
+            # ➡️ Očisti state
             clear_user_state(from_number)
 
+            # ➡️ Pošalji confirmation
             await send_whatsapp_template(
                 to_number=from_number,
                 profession=profession,
                 stage="pm_confirmation"
             )
+
+    return {"status": "ok"}
