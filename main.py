@@ -3,7 +3,7 @@ import json
 from fastapi import FastAPI, HTTPException, Request
 from whatsapp_service import send_whatsapp_template
 from state_memory import set_state, get_state, update_step, clear_state
-from supabase_service import get_business_by_id
+from supabase_service import get_business_by_id, save_request
 
 app = FastAPI()
 
@@ -93,10 +93,19 @@ async def receive_message(request: Request):
         elif step == "details" and text:
             print("📝 Dobiveni detalji od korisnika:", text)
 
-            # TODO: spremi zahtjev u requests tablicu
+            # ➡️ Spremi zahtjev u requests tablicu
+            save_request(
+                phone_number=from_number,
+                business_id=business_id,
+                profession=profession,
+                message=text,
+                request_type="booking_service"
+            )
 
+            # ➡️ Očisti state
             clear_state(from_number)
 
+            # ➡️ Pošalji confirmation template
             await send_whatsapp_template(
                 to_number=from_number,
                 profession=profession,

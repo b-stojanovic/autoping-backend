@@ -23,7 +23,7 @@ def _norm_phone(msisdn: str) -> str:
 
 def save_user_state(phone: str, business_id: str, profession: str, step: str):
     try:
-        phone = _norm_phone(phone)  # ✅ uvijek sa +
+        phone = _norm_phone(phone)
         data = {
             "phone": phone,
             "business_id": business_id,
@@ -39,8 +39,7 @@ def save_user_state(phone: str, business_id: str, profession: str, step: str):
 
 def get_user_state(phone: str):
     try:
-        phone = _norm_phone(phone)  # ✅ osiguraj da je isti format
-        # ⚠️ maknuli order(created_at) jer možda kolona ne postoji
+        phone = _norm_phone(phone)
         response = supabase.table("user_states").select("*").eq("phone", phone).limit(1).execute()
         if response.data and len(response.data) > 0:
             return response.data[0]
@@ -51,7 +50,7 @@ def get_user_state(phone: str):
 
 def clear_user_state(phone: str):
     try:
-        phone = _norm_phone(phone)  # ✅ normaliziraj prije brisanja
+        phone = _norm_phone(phone)
         response = supabase.table("user_states").delete().eq("phone", phone).execute()
         print("🧹 User state obrisan:", response)
         return response
@@ -73,14 +72,22 @@ def get_business_by_id(business_id: str):
         print("❌ Greška u get_business_by_id:", e)
         return None
 
-def save_request_to_supabase(phone_number: str, business_id: str, profession: str, message: str):
+# ========================
+# Requests
+# ========================
+
+def save_request(phone_number: str, business_id: str, message: str, profession: str = None, request_type: str = "booking_service", priority: str = "normal", name: str = None, additional_info: dict = None):
     try:
         data = {
-            "phone_number": phone_number,
+            "phone_number": _norm_phone(phone_number),
             "business_id": business_id,
-            "profession": profession,
+            "profession": profession or "",
             "message": message,
-            "status": "new"
+            "request_type": request_type,
+            "priority": priority,
+            "name": name or "",
+            "additional_info": additional_info or {},
+            "status": "pending"
         }
         response = supabase.table("requests").insert(data).execute()
         print("💾 Zahtjev spremljen u Supabase:", response)
