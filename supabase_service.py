@@ -72,3 +72,19 @@ def get_business_by_id(business_id: str):
     except Exception as e:
         print("❌ Greška u get_business_by_id:", e)
         return None
+
+def save_request_to_supabase(phone_number: str, business_id: str, profession: str, message: str):
+    try:
+        data = {
+            "phone_number": phone_number,
+            "business_id": business_id,
+            "profession": profession,
+            "message": message,
+            "status": "new"
+        }
+        response = supabase.table("requests").insert(data).execute()
+        print("💾 Zahtjev spremljen u Supabase:", response)
+        return response
+    except Exception as e:
+        print("❌ Greška pri spremanju zahtjeva:", e)
+        return None
