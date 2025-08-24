@@ -35,7 +35,7 @@ async def handle_missed_call(payload: dict):
         raise HTTPException(status_code=400, detail="Missing phone_number, business_id or profession")
 
     # ➡️ Snimi state u Supabase (intro stage)
-    set_state(phone, profession, "intro", business_id)
+    set_state(_norm_phone(phone), profession, "intro", business_id)
 
     # ➡️ Dohvati ime obrta
     business = get_business_by_id(business_id)
@@ -62,7 +62,7 @@ async def receive_message(request: Request):
 
     results = data.get("results", [])
     for result in results:
-        from_number = result.get("from")
+        from_number = _norm_phone(result.get("from"))
         message = result.get("message", {})
         text = message.get("text", "").strip()
         button_payload = message.get("payload")
@@ -81,7 +81,6 @@ async def receive_message(request: Request):
 
         if button_payload:
             print("🔘 Kliknut gumb:", button_payload)
-            # ✅ samo update step, nemoj resetirati state
             update_step(from_number, "details")
 
             await send_whatsapp_template(
