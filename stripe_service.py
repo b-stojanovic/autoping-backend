@@ -7,7 +7,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 import json
 
-# Setup
+# Setup - set API key immediately
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 supabase = create_client(
     os.getenv('SUPABASE_URL'),
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/stripe", tags=["stripe"])
 PRICING_TIERS = {
     "HR": {
         "starter": {
-            "stripe_price_id": "price_1S3GBhGxXc2NbVni78GsPggT",  # Replace with actual Stripe PRICE ID (not product ID!)
+            "stripe_price_id": "price_1S3GBhGxXc2NbVni78GsPggT",  # Replace with actual Stripe PRICE ID
             "price": 19.99,
             "currency": "EUR",
             "features": [
@@ -118,8 +118,8 @@ class WebhookEvent(BaseModel):
     type: str
     data: dict
 
-# Utility functions
-async def get_business(business_id: str):
+# Utility functions - converted to sync
+def get_business(business_id: str):
     """Get business from Supabase"""
     try:
         result = supabase.table("businesses").select("*").eq("id", business_id).single().execute()
@@ -127,9 +127,9 @@ async def get_business(business_id: str):
     except Exception as e:
         raise HTTPException(status_code=404, detail="Business not found")
 
-async def check_business_features(business_id: str, required_feature: str) -> bool:
+def check_business_features(business_id: str, required_feature: str) -> bool:
     """Check if business has access to a specific feature"""
-    business = await get_business(business_id)
+    business = get_business(business_id)
     
     # Check trial period first
     if business["subscription_tier"] == "trial":
@@ -150,7 +150,7 @@ async def check_business_features(business_id: str, required_feature: str) -> bo
     plan_features = PRICING_TIERS[country][tier]["features"]
     return required_feature in plan_features
 
-async def update_business_subscription(business_id: str, updates: dict):
+def update_business_subscription(business_id: str, updates: dict):
     """Update business subscription data in Supabase"""
     try:
         supabase.table("businesses").update(updates).eq("id", business_id).execute()
@@ -159,7 +159,7 @@ async def update_business_subscription(business_id: str, updates: dict):
 
 # API Endpoints
 @router.get("/pricing/{country}")
-async def get_pricing(country: str = "HR"):
+def get_pricing(country: str = "HR"):
     """Get pricing information for a country"""
     if country not in PRICING_TIERS:
         raise HTTPException(status_code=400, detail="Unsupported country")
@@ -178,7 +178,7 @@ async def get_pricing(country: str = "HR"):
     }
 
 @router.post("/create-subscription")
-async def create_subscription(request: SubscriptionRequest):
+def create_subscription(request: SubscriptionRequest):
     """Create new subscription for business"""
     try:
         print(f"DEBUG: Starting subscription creation for business_id: {request.business_id}")
@@ -187,30 +187,108 @@ async def create_subscription(request: SubscriptionRequest):
         stripe_key = os.getenv('STRIPE_SECRET_KEY')
         print(f"DEBUG: Stripe key exists: {stripe_key is not None}")
         if stripe_key:
-            print(f"DEBUG: Stripe key starts with: {stripe_key[:10]}")
+            print(f"DEBUG: Key length: {len(stripe_key)}")
+            print(f"DEBUG: Key starts with: {stripe_key[:15]}")
         
-        # Alternativni test Stripe konekcije
-        print("DEBUG: Testing alternative Stripe connection...")
-        try:
-            # Jednostavniji test - samo account retrieve
-            account = stripe.Account.retrieve()
-            print(f"DEBUG: Stripe account ID: {account.id}")
-        except Exception as stripe_err:
-            print(f"DEBUG: Stripe connection failed: {stripe_err}")
-            raise HTTPException(status_code=500, detail=f"Stripe connection error: {str(stripe_err)}")
+        # Test Stripe connection with sync version
+        print("DEBUG: Testing Stripe connection with sync version...")
+        account = stripe.Account.retrieve()
+        print(f"DEBUG: Stripe connection successful! Account ID: {account.id}")
         
-        return {"debug": "Stripe connection test passed", "account_connected": True}
+        # Validate inputs
+        if request.country not in PRICING_TIERS:
+            raise HTTPException(status_code=400, detail="Unsupported country")
         
+        if request.tier not in PRICING_TIERS[request.country]:
+            raise HTTPException(status_code=400, detail="Invalid subscription tier")
+        
+        # Get plan config
+        plan_config = PRICING_TIERS[request.country][request.tier]
+        print(f"DEBUG: Using price_id: {plan_config['stripe_price_id']}")
+        
+        # Check if price_id is placeholder
+        if 'REPLACE' in plan_config['stripe_price_id'] or plan_config['stripe_price_id'].startswith('price_hr') or plan_config['stripe_price_id'].startswith('price_rs'):
+            return {
+                "debug": "Please replace placeholder price IDs with real Stripe Price IDs",
+                "current_price_id": plan_config['stripe_price_id'],
+                "note": "Go to Stripe Dashboard → Products → Copy Price ID (starts with price_)",
+                "stripe_connected": True
+            }
+            
+        # Get business
+        print("DEBUG: Getting business from database...")
+        business = get_business(request.business_id)
+        print(f"DEBUG: Found business: {business['name']}")
+        
+        # Create or get Stripe customer
+        if business.get("stripe_customer_id"):
+            customer_id = business["stripe_customer_id"]
+            print(f"DEBUG: Using existing customer: {customer_id}")
+        else:
+            print("DEBUG: Creating new Stripe customer...")
+            customer = stripe.Customer.create(
+                email=business["email"],
+                name=business["name"],
+                phone=business.get("phone_number"),
+                metadata={
+                    "business_id": request.business_id,
+                    "country": request.country
+                }
+            )
+            customer_id = customer.id
+            print(f"DEBUG: Created customer: {customer_id}")
+            
+            # Update business with customer ID
+            update_business_subscription(request.business_id, {
+                "stripe_customer_id": customer_id
+            })
+        
+        # Create subscription
+        print(f"DEBUG: Creating subscription with price: {plan_config['stripe_price_id']}")
+        subscription = stripe.Subscription.create(
+            customer=customer_id,
+            items=[{"price": plan_config["stripe_price_id"]}],
+            payment_behavior="default_incomplete",
+            payment_settings={"save_default_payment_method": "on_subscription"},
+            expand=["latest_invoice.payment_intent"],
+            metadata={
+                "business_id": request.business_id,
+                "tier": request.tier,
+                "country": request.country
+            }
+        )
+        
+        print(f"DEBUG: Subscription created: {subscription.id}")
+        
+        # Update business in Supabase
+        update_business_subscription(request.business_id, {
+            "subscription_status": "incomplete",
+            "subscription_tier": request.tier,
+            "subscription_id": subscription.id,
+            "subscription_country": request.country
+        })
+        
+        return {
+            "subscription_id": subscription.id,
+            "client_secret": subscription.latest_invoice.payment_intent.client_secret,
+            "tier": request.tier,
+            "price": plan_config["price"],
+            "currency": plan_config["currency"]
+        }
+        
+    except stripe.error.StripeError as e:
+        print(f"DEBUG: Stripe error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Stripe error: {str(e)}")
     except Exception as e:
         print(f"DEBUG: General error: {str(e)}")
         print(f"DEBUG: Error type: {type(e)}")
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 @router.get("/subscription-status/{business_id}")
-async def get_subscription_status(business_id: str):
+def get_subscription_status(business_id: str):
     """Get current subscription status for business"""
     try:
-        business = await get_business(business_id)
+        business = get_business(business_id)
         
         # Check if on trial
         if business["subscription_tier"] == "trial":
@@ -229,7 +307,7 @@ async def get_subscription_status(business_id: str):
             
             # Sync status with Supabase if different
             if stripe_subscription.status != business["subscription_status"]:
-                await update_business_subscription(business_id, {
+                update_business_subscription(business_id, {
                     "subscription_status": stripe_subscription.status
                 })
             
@@ -257,10 +335,10 @@ async def get_subscription_status(business_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/cancel-subscription/{business_id}")
-async def cancel_subscription(business_id: str, cancel_immediately: bool = False):
+def cancel_subscription(business_id: str, cancel_immediately: bool = False):
     """Cancel subscription for business"""
     try:
-        business = await get_business(business_id)
+        business = get_business(business_id)
         
         if not business.get("subscription_id"):
             raise HTTPException(status_code=400, detail="No active subscription found")
@@ -268,7 +346,7 @@ async def cancel_subscription(business_id: str, cancel_immediately: bool = False
         if cancel_immediately:
             # Cancel immediately
             stripe.Subscription.delete(business["subscription_id"])
-            await update_business_subscription(business_id, {
+            update_business_subscription(business_id, {
                 "subscription_status": "canceled",
                 "subscription_tier": "free"
             })
@@ -279,7 +357,7 @@ async def cancel_subscription(business_id: str, cancel_immediately: bool = False
                 business["subscription_id"],
                 cancel_at_period_end=True
             )
-            await update_business_subscription(business_id, {
+            update_business_subscription(business_id, {
                 "subscription_status": "active"  # Still active until period ends
             })
             return {"message": "Subscription will cancel at end of billing period"}
@@ -290,10 +368,10 @@ async def cancel_subscription(business_id: str, cancel_immediately: bool = False
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/check-feature/{business_id}/{feature}")
-async def check_feature_access(business_id: str, feature: str):
+def check_feature_access(business_id: str, feature: str):
     """Check if business has access to specific feature"""
     try:
-        has_access = await check_business_features(business_id, feature)
+        has_access = check_business_features(business_id, feature)
         return {
             "business_id": business_id,
             "feature": feature,
@@ -303,10 +381,10 @@ async def check_feature_access(business_id: str, feature: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/webhook")
-async def stripe_webhook(request: Request):
+def stripe_webhook(request: Request):
     """Handle Stripe webhooks"""
     try:
-        payload = await request.body()
+        payload = request.body()
         sig_header = request.headers.get('stripe-signature')
         endpoint_secret = os.getenv('STRIPE_WEBHOOK_SECRET')
         
@@ -322,7 +400,7 @@ async def stripe_webhook(request: Request):
             business_id = subscription.metadata.get('business_id')
             
             if business_id:
-                await update_business_subscription(business_id, {
+                update_business_subscription(business_id, {
                     "subscription_status": "active"
                 })
                 
@@ -332,7 +410,7 @@ async def stripe_webhook(request: Request):
             business_id = subscription.metadata.get('business_id')
             
             if business_id:
-                await update_business_subscription(business_id, {
+                update_business_subscription(business_id, {
                     "subscription_status": "past_due"
                 })
                 
@@ -341,7 +419,7 @@ async def stripe_webhook(request: Request):
             business_id = subscription.metadata.get('business_id')
             
             if business_id:
-                await update_business_subscription(business_id, {
+                update_business_subscription(business_id, {
                     "subscription_status": "canceled",
                     "subscription_tier": "free"
                 })
@@ -357,15 +435,15 @@ async def stripe_webhook(request: Request):
 
 # Helper endpoint for trial management
 @router.post("/extend-trial/{business_id}")
-async def extend_trial(business_id: str, days: int):
+def extend_trial(business_id: str, days: int):
     """Extend trial period (admin only)"""
     try:
-        business = await get_business(business_id)
+        business = get_business(business_id)
         
         current_trial_end = datetime.fromisoformat(business["trial_ends_at"].replace('Z', '+00:00'))
         new_trial_end = current_trial_end + timedelta(days=days)
         
-        await update_business_subscription(business_id, {
+        update_business_subscription(business_id, {
             "trial_ends_at": new_trial_end.isoformat()
         })
         
