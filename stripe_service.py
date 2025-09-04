@@ -189,40 +189,18 @@ async def create_subscription(request: SubscriptionRequest):
         if stripe_key:
             print(f"DEBUG: Stripe key starts with: {stripe_key[:10]}")
         
-        # Test Stripe connection first
-        print("DEBUG: Testing Stripe API connection...")
-        test_customers = stripe.Customer.list(limit=1)
-        print("DEBUG: Stripe API connection successful")
+        # Alternativni test Stripe konekcije
+        print("DEBUG: Testing alternative Stripe connection...")
+        try:
+            # Jednostavniji test - samo account retrieve
+            account = stripe.Account.retrieve()
+            print(f"DEBUG: Stripe account ID: {account.id}")
+        except Exception as stripe_err:
+            print(f"DEBUG: Stripe connection failed: {stripe_err}")
+            raise HTTPException(status_code=500, detail=f"Stripe connection error: {str(stripe_err)}")
         
-        # Validate inputs
-        if request.country not in PRICING_TIERS:
-            raise HTTPException(status_code=400, detail="Unsupported country")
+        return {"debug": "Stripe connection test passed", "account_connected": True}
         
-        if request.tier not in PRICING_TIERS[request.country]:
-            raise HTTPException(status_code=400, detail="Invalid subscription tier")
-        
-        # Get plan config
-        plan_config = PRICING_TIERS[request.country][request.tier]
-        print(f"DEBUG: Using price_id: {plan_config['stripe_price_id']}")
-        
-        # Check if price_id is placeholder
-        if plan_config['stripe_price_id'].startswith('price_REPLACE') or plan_config['stripe_price_id'].startswith('price_hr') or plan_config['stripe_price_id'].startswith('price_rs'):
-            return {
-                "debug": "Please replace placeholder price IDs with real Stripe Price IDs",
-                "current_price_id": plan_config['stripe_price_id'],
-                "note": "Go to Stripe Dashboard → Products → Copy Price ID (starts with price_)"
-            }
-            
-        # Get business
-        print("DEBUG: Getting business from database...")
-        business = await get_business(request.business_id)
-        print(f"DEBUG: Found business: {business['name']}")
-        
-        return {"debug": "All checks passed", "business_name": business["name"], "price_id": plan_config['stripe_price_id']}
-        
-    except stripe.error.StripeError as e:
-        print(f"DEBUG: Stripe error: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Stripe error: {str(e)}")
     except Exception as e:
         print(f"DEBUG: General error: {str(e)}")
         print(f"DEBUG: Error type: {type(e)}")
