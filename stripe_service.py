@@ -7,6 +7,10 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 import json
 
+# Debug linija
+print(f"DEBUG: Stripe API key loaded: {os.getenv('STRIPE_SECRET_KEY')[:10]}...")
+
+
 # Setup
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 supabase = create_client(
