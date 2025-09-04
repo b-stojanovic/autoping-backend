@@ -20,7 +20,7 @@ router = APIRouter(prefix="/stripe", tags=["stripe"])
 PRICING_TIERS = {
     "HR": {
         "starter": {
-            "stripe_price_id": "price_hr_starter",  # Replace with actual Stripe price IDs
+            "stripe_price_id": "prod_SzEf3dzJAR8NUl",  # Replace with actual Stripe price IDs
             "price": 19.99,
             "currency": "EUR",
             "features": [
