@@ -381,36 +381,37 @@ def check_feature_access(business_id: str, feature: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/webhook")
-async def stripe_webhook(request: Request):  # Dodati async
-    """Handle Stripe webhooks"""
+async def stripe_webhook(request: Request):
     try:
         print("DEBUG: Webhook received")
-        payload = await request.body()  # Dodati await
+        payload = await request.body()
         print(f"DEBUG: Payload length: {len(payload)}")
         
         sig_header = request.headers.get('stripe-signature')
-        endpoint_secret = os.getenv('STRIPE_WEBHOOK_SECRET')
+        print(f"DEBUG: Signature header: {sig_header[:50] if sig_header else 'None'}...")
         
+        endpoint_secret = os.getenv('STRIPE_WEBHOOK_SECRET')
+        print(f"DEBUG: Webhook secret exists: {endpoint_secret is not None}")
+        print(f"DEBUG: Webhook secret starts with: {endpoint_secret[:10] if endpoint_secret else 'None'}...")
+        
+        # Test signature manually
+        if not sig_header:
+            raise HTTPException(status_code=400, detail="No signature header")
+        
+        if not endpoint_secret:
+            raise HTTPException(status_code=400, detail="No webhook secret configured")
+            
         # Verify webhook signature
         event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
-        print(f"DEBUG: Event type: {event['type']}")
+        print(f"DEBUG: Event verified successfully: {event['type']}")
         
-        # Handle the event
-        if event['type'] == 'invoice.payment_succeeded':
-            subscription_id = event['data']['object']['subscription']
-            subscription = stripe.Subscription.retrieve(subscription_id)
-            business_id = subscription.metadata.get('business_id')
-            
-            if business_id:
-                update_business_subscription(business_id, {
-                    "subscription_status": "active"
-                })
-                print(f"DEBUG: Updated business {business_id} to active")
-                
-        return {"status": "success"}
+        return {"status": "success", "event_type": event['type']}
         
+    except stripe.error.SignatureVerificationError as e:
+        print(f"DEBUG: Signature verification failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Signature error: {str(e)}")
     except Exception as e:
-        print(f"DEBUG: Webhook error: {str(e)}")
+        print(f"DEBUG: General webhook error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     
 # Helper endpoint for trial management
