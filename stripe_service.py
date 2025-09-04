@@ -7,10 +7,6 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 import json
 
-# Debug linija
-print(f"DEBUG: Stripe API key loaded: {os.getenv('STRIPE_SECRET_KEY')[:10]}...")
-
-
 # Setup
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 supabase = create_client(
@@ -24,7 +20,7 @@ router = APIRouter(prefix="/stripe", tags=["stripe"])
 PRICING_TIERS = {
     "HR": {
         "starter": {
-            "stripe_price_id": "prod_SzEf3dzJAR8NUl",  # Replace with actual Stripe price IDs
+            "stripe_price_id": "price_1S3GBhGxXc2NbVni78GsPggT",  # Replace with actual Stripe PRICE ID (not product ID!)
             "price": 19.99,
             "currency": "EUR",
             "features": [
@@ -185,72 +181,51 @@ async def get_pricing(country: str = "HR"):
 async def create_subscription(request: SubscriptionRequest):
     """Create new subscription for business"""
     try:
+        print(f"DEBUG: Starting subscription creation for business_id: {request.business_id}")
+        
+        # Debug environment variables
+        stripe_key = os.getenv('STRIPE_SECRET_KEY')
+        print(f"DEBUG: Stripe key exists: {stripe_key is not None}")
+        if stripe_key:
+            print(f"DEBUG: Stripe key starts with: {stripe_key[:10]}")
+        
+        # Test Stripe connection first
+        print("DEBUG: Testing Stripe API connection...")
+        test_customers = stripe.Customer.list(limit=1)
+        print("DEBUG: Stripe API connection successful")
+        
         # Validate inputs
         if request.country not in PRICING_TIERS:
             raise HTTPException(status_code=400, detail="Unsupported country")
         
         if request.tier not in PRICING_TIERS[request.country]:
             raise HTTPException(status_code=400, detail="Invalid subscription tier")
-            
-        # Get business
-        business = await get_business(request.business_id)
         
         # Get plan config
         plan_config = PRICING_TIERS[request.country][request.tier]
+        print(f"DEBUG: Using price_id: {plan_config['stripe_price_id']}")
         
-        # Create or get Stripe customer
-        if business.get("stripe_customer_id"):
-            customer_id = business["stripe_customer_id"]
-        else:
-            customer = stripe.Customer.create(
-                email=business["email"],
-                name=business["name"],
-                phone=business.get("phone_number"),
-                metadata={
-                    "business_id": request.business_id,
-                    "country": request.country
-                }
-            )
-            customer_id = customer.id
-            
-            # Update business with customer ID
-            await update_business_subscription(request.business_id, {
-                "stripe_customer_id": customer_id
-            })
-        
-        # Create subscription
-        subscription = stripe.Subscription.create(
-            customer=customer_id,
-            items=[{"price": plan_config["stripe_price_id"]}],
-            payment_behavior="default_incomplete",
-            payment_settings={"save_default_payment_method": "on_subscription"},
-            expand=["latest_invoice.payment_intent"],
-            metadata={
-                "business_id": request.business_id,
-                "tier": request.tier,
-                "country": request.country
+        # Check if price_id is placeholder
+        if plan_config['stripe_price_id'].startswith('price_REPLACE') or plan_config['stripe_price_id'].startswith('price_hr') or plan_config['stripe_price_id'].startswith('price_rs'):
+            return {
+                "debug": "Please replace placeholder price IDs with real Stripe Price IDs",
+                "current_price_id": plan_config['stripe_price_id'],
+                "note": "Go to Stripe Dashboard → Products → Copy Price ID (starts with price_)"
             }
-        )
+            
+        # Get business
+        print("DEBUG: Getting business from database...")
+        business = await get_business(request.business_id)
+        print(f"DEBUG: Found business: {business['name']}")
         
-        # Update business in Supabase
-        await update_business_subscription(request.business_id, {
-            "subscription_status": "incomplete",
-            "subscription_tier": request.tier,
-            "subscription_id": subscription.id,
-            "subscription_country": request.country
-        })
-        
-        return {
-            "subscription_id": subscription.id,
-            "client_secret": subscription.latest_invoice.payment_intent.client_secret,
-            "tier": request.tier,
-            "price": plan_config["price"],
-            "currency": plan_config["currency"]
-        }
+        return {"debug": "All checks passed", "business_name": business["name"], "price_id": plan_config['stripe_price_id']}
         
     except stripe.error.StripeError as e:
+        print(f"DEBUG: Stripe error: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Stripe error: {str(e)}")
     except Exception as e:
+        print(f"DEBUG: General error: {str(e)}")
+        print(f"DEBUG: Error type: {type(e)}")
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
 @router.get("/subscription-status/{business_id}")
