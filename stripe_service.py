@@ -264,12 +264,12 @@ def create_subscription(request: SubscriptionRequest):
         update_business_subscription(request.business_id, {
             "subscription_status": "incomplete",
             "subscription_tier": request.tier,
-            "subscription_id": subscription.id,
+            "stripe_subscription_id": subscription.id,
             "subscription_country": request.country
         })
         
         return {
-            "subscription_id": subscription.id,
+            "stripe_subscription_id": subscription.id,
             "client_secret": subscription.latest_invoice.payment_intent.client_secret,
             "tier": request.tier,
             "price": plan_config["price"],
@@ -302,8 +302,8 @@ def get_subscription_status(business_id: str):
             }
         
         # Get subscription from Stripe
-        if business.get("subscription_id"):
-            stripe_subscription = stripe.Subscription.retrieve(business["subscription_id"])
+        if business.get("stripe_subscription_id"):
+            stripe_subscription = stripe.Subscription.retrieve(business["stripe_subscription_id"])
             
             # Sync status with Supabase if different
             if stripe_subscription.status != business["subscription_status"]:
@@ -340,12 +340,12 @@ def cancel_subscription(business_id: str, cancel_immediately: bool = False):
     try:
         business = get_business(business_id)
         
-        if not business.get("subscription_id"):
+        if not business.get("stripe_subscription_id"):
             raise HTTPException(status_code=400, detail="No active subscription found")
         
         if cancel_immediately:
             # Cancel immediately
-            stripe.Subscription.delete(business["subscription_id"])
+            stripe.Subscription.delete(business["stripe_subscription_id"])
             update_business_subscription(business_id, {
                 "subscription_status": "canceled",
                 "subscription_tier": "free"
@@ -354,7 +354,7 @@ def cancel_subscription(business_id: str, cancel_immediately: bool = False):
         else:
             # Cancel at period end
             stripe.Subscription.modify(
-                business["subscription_id"],
+                business["stripe_subscription_id"],
                 cancel_at_period_end=True
             )
             update_business_subscription(business_id, {
