@@ -125,25 +125,45 @@ async def stripe_webhook(request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
+    # 1) Checkout completed → evidentiraj plan, ali možda subscription još nije tu
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         business_id = session["metadata"]["business_id"]
         plan_id = session["metadata"]["plan_id"]
 
         supabase.table("businesses").update({
-            "subscription_status": "active",
-            "subscription_plan_id": plan_id,
-            "stripe_subscription_id": session["subscription"],
+            "subscription_status": "incomplete",   # čekamo potvrdu plaćanja
+            "subscription_plan_id": plan_id
         }).eq("id", business_id).execute()
 
+    # 2) Subscription created → spremi subscription_id i postavi active
+    elif event["type"] == "customer.subscription.created":
+        subscription = event["data"]["object"]
+        customer_id = subscription["customer"]
+
+        supabase.table("businesses").update({
+            "subscription_status": subscription["status"],  # obično "active"
+            "stripe_subscription_id": subscription["id"]
+        }).eq("stripe_customer_id", customer_id).execute()
+
+    # 3) Subscription updated/deleted → sync status
     elif event["type"] in ["customer.subscription.updated", "customer.subscription.deleted"]:
         subscription = event["data"]["object"]
         customer_id = subscription["customer"]
-        status = subscription["status"]
 
         supabase.table("businesses").update({
-            "subscription_status": status,
-            "stripe_subscription_id": subscription["id"],
+            "subscription_status": subscription["status"],
+            "stripe_subscription_id": subscription["id"]
+        }).eq("stripe_customer_id", customer_id).execute()
+
+    # 4) Invoice paid → dodatna sigurnost da je status active
+    elif event["type"] == "invoice.payment_succeeded":
+        invoice = event["data"]["object"]
+        customer_id = invoice["customer"]
+
+        supabase.table("businesses").update({
+            "subscription_status": "active"
         }).eq("stripe_customer_id", customer_id).execute()
 
     return {"status": "success"}
+
