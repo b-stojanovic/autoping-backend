@@ -4,8 +4,11 @@ from fastapi import FastAPI, HTTPException, Request
 from whatsapp_service import send_whatsapp_template
 from state_memory import set_state, get_state, update_step, clear_state
 from supabase_service import get_business_by_id, save_request
+from stripe_service import router as stripe_router
+
 
 app = FastAPI()
+app.include_router(stripe_router, prefix="/api")
 
 # ========================
 # Utils

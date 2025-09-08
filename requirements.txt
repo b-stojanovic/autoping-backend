@@ -1,5 +1,6 @@
 fastapi
 uvicorn
-python-dotenv
 requests
 supabase
+stripe==5.5.0
+python-dotenv==1.0.0
