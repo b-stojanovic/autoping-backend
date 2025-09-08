@@ -10,6 +10,8 @@ from stripe_service import router as stripe_router
 app = FastAPI()
 app.include_router(stripe_router)
 
+app.include_router(stripe_router, prefix="/api")
+
 # ========================
 # Utils
 # ========================
