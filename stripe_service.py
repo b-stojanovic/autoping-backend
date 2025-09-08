@@ -61,6 +61,12 @@ def create_checkout_session(request: CheckoutRequest):
         stripe_customer_id = customer.id
         supabase.table("businesses").update({"stripe_customer_id": stripe_customer_id}).eq("id", request.business_id).execute()
 
+    # ⬅️ Ovdje odmah zapišemo plan_id i status "incomplete"
+    supabase.table("businesses").update({
+        "subscription_status": "incomplete",
+        "subscription_plan_id": request.plan_id
+    }).eq("id", request.business_id).execute()
+
     # Kreiraj checkout session
     try:
         session = stripe.checkout.Session.create(
