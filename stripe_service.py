@@ -8,10 +8,12 @@ from datetime import datetime, timedelta, timezone
 # Setup Stripe
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://autoping.io")
+
 # Setup Supabase
 supabase: Client = create_client(
     os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # ⚠️ koristi service role key
+    os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 )
 
 router = APIRouter(prefix="/stripe", tags=["stripe"])
@@ -51,6 +53,35 @@ def get_plan(plan_id: str):
     return result.data
 
 
+def get_business_by_customer(customer_id: str):
+    """Helper za webhook - dohvati business po stripe_customer_id"""
+    result = supabase.table("businesses").select("*").eq("stripe_customer_id", customer_id).single().execute()
+    return result.data
+
+
+def ensure_subscription_row(business_id: str, request_limit: int):
+    """Kreiraj ili ažuriraj subscription row za tracking usage-a"""
+    existing = supabase.table("subscriptions").select("id").eq("business_id", business_id).single().execute()
+
+    renewal_date = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+
+    if existing.data:
+        # Reset usage pri novoj pretplati
+        supabase.table("subscriptions").update({
+            "used_request": 0,
+            "request_limit": request_limit,
+            "renewal_date": renewal_date,
+        }).eq("business_id", business_id).execute()
+    else:
+        # Kreiraj novi row
+        supabase.table("subscriptions").insert({
+            "business_id": business_id,
+            "used_request": 0,
+            "request_limit": request_limit,
+            "renewal_date": renewal_date,
+        }).execute()
+
+
 # --------------------------
 # Endpoint: Kreiraj Checkout Session
 # --------------------------
@@ -69,9 +100,11 @@ def create_checkout_session(request: CheckoutRequest):
             metadata={"business_id": request.business_id},
         )
         stripe_customer_id = customer.id
-        supabase.table("businesses").update({"stripe_customer_id": stripe_customer_id}).eq("id", request.business_id).execute()
+        supabase.table("businesses").update({
+            "stripe_customer_id": stripe_customer_id
+        }).eq("id", request.business_id).execute()
 
-    # Ovdje odmah zapišemo plan_id i status "incomplete"
+    # Zapišemo plan_id i status "incomplete" (čeka plaćanje)
     supabase.table("businesses").update({
         "subscription_status": "incomplete",
         "subscription_plan_id": request.plan_id
@@ -88,8 +121,8 @@ def create_checkout_session(request: CheckoutRequest):
                 "business_id": request.business_id,
                 "plan_id": request.plan_id,
             },
-            success_url="https://autoping.io/dashboard?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url="https://autoping.io/pricing",
+            success_url=f"{FRONTEND_URL}/dashboard?payment=success",
+            cancel_url=f"{FRONTEND_URL}/payment",
         )
         return {"checkout_url": session.url}
     except Exception as e:
@@ -108,13 +141,17 @@ def upgrade_subscription(request: UpgradeRequest):
         raise HTTPException(status_code=400, detail="No active subscription to upgrade")
 
     try:
+        # Dohvati trenutni subscription item ID
+        sub = stripe.Subscription.retrieve(business["stripe_subscription_id"])
+        item_id = sub["items"]["data"][0]["id"]
+
         # Modify existing Stripe subscription
         stripe.Subscription.modify(
             business["stripe_subscription_id"],
             cancel_at_period_end=False,
             proration_behavior="create_prorations",
             items=[{
-                "id": stripe.Subscription.retrieve(business["stripe_subscription_id"]).items.data[0].id,
+                "id": item_id,
                 "price": new_plan["stripe_price_id"],
             }],
         )
@@ -124,6 +161,12 @@ def upgrade_subscription(request: UpgradeRequest):
             "subscription_plan_id": request.new_plan_id,
             "subscription_status": "active"
         }).eq("id", request.business_id).execute()
+
+        # Update request limit u subscriptions tablici
+        new_limit = new_plan.get("request_limit", 0)
+        supabase.table("subscriptions").update({
+            "request_limit": new_limit
+        }).eq("business_id", request.business_id).execute()
 
         return {"status": "success", "message": "Subscription upgraded successfully"}
     except Exception as e:
@@ -143,13 +186,6 @@ def repurchase_subscription(request: RepurchaseRequest):
     plan = get_plan(business["subscription_plan_id"])
 
     try:
-        # Reset requests + renewal date (30 days from now)
-        new_renewal = datetime.now(timezone.utc) + timedelta(days=30)
-        supabase.table("subscriptions").update({
-            "used_request": 0,
-            "renewal_date": new_renewal.isoformat()
-        }).eq("business_id", request.business_id).execute()
-
         # Kreiraj checkout session za isti plan
         session = stripe.checkout.Session.create(
             mode="subscription",
@@ -161,8 +197,8 @@ def repurchase_subscription(request: RepurchaseRequest):
                 "plan_id": business["subscription_plan_id"],
                 "repurchase": "true"
             },
-            success_url="https://autoping.io/dashboard?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url="https://autoping.io/pricing",
+            success_url=f"{FRONTEND_URL}/dashboard?payment=success",
+            cancel_url=f"{FRONTEND_URL}/payment",
         )
         return {"checkout_url": session.url}
     except Exception as e:
@@ -181,14 +217,22 @@ def get_subscription_overview(business_id: str):
     current_period_end = None
     cancel_at_period_end = None
     if business.get("stripe_subscription_id"):
-        subscription = stripe.Subscription.retrieve(business["stripe_subscription_id"])
-        stripe_status = subscription.status
-        current_period_end = subscription.current_period_end
-        cancel_at_period_end = subscription.cancel_at_period_end
+        try:
+            subscription = stripe.Subscription.retrieve(business["stripe_subscription_id"])
+            stripe_status = subscription.status
+            current_period_end = subscription.current_period_end
+            cancel_at_period_end = subscription.cancel_at_period_end
+        except stripe.error.InvalidRequestError:
+            # Subscription je obrisan na Stripeu
+            stripe_status = "cancelled"
 
-    # Subscription tablica
-    sub_result = supabase.table("subscriptions").select("*").eq("business_id", business_id).single().execute()
-    sub = sub_result.data or {}
+    # Subscription tablica (usage tracking)
+    sub = {}
+    try:
+        sub_result = supabase.table("subscriptions").select("*").eq("business_id", business_id).single().execute()
+        sub = sub_result.data or {}
+    except Exception:
+        pass
 
     limit = sub.get("request_limit")
     used = sub.get("used_request", 0)
@@ -204,14 +248,17 @@ def get_subscription_overview(business_id: str):
     # Plan info
     plan_info = None
     if business.get("subscription_plan_id"):
-        plan = get_plan(business["subscription_plan_id"])
-        if plan:
-            plan_info = {
-                "id": plan["id"],
-                "name": plan.get("name"),
-                "price": plan.get("price"),
-                "request_limit": plan.get("request_limit"),
-            }
+        try:
+            plan = get_plan(business["subscription_plan_id"])
+            if plan:
+                plan_info = {
+                    "id": plan["id"],
+                    "name": plan.get("name"),
+                    "price": plan.get("price"),
+                    "request_limit": plan.get("request_limit"),
+                }
+        except Exception:
+            pass
 
     return {
         "business_id": business_id,
@@ -246,40 +293,96 @@ async def stripe_webhook(request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Webhook error: {str(e)}")
 
-    if event["type"] == "checkout.session.completed":
+    event_type = event["type"]
+
+    # ─── CHECKOUT COMPLETED ───
+    if event_type == "checkout.session.completed":
         session = event["data"]["object"]
-        business_id = session["metadata"]["business_id"]
-        plan_id = session["metadata"]["plan_id"]
+        business_id = session["metadata"].get("business_id")
+        plan_id = session["metadata"].get("plan_id")
+        subscription_id = session.get("subscription")
 
-        supabase.table("businesses").update({
-            "subscription_status": "incomplete",
-            "subscription_plan_id": plan_id
-        }).eq("id", business_id).execute()
+        if business_id and plan_id:
+            # Dohvati plan za request_limit
+            try:
+                plan = get_plan(plan_id)
+                request_limit = plan.get("request_limit", 0)
+            except Exception:
+                request_limit = 0
 
-    elif event["type"] == "customer.subscription.created":
+            # Update business
+            update_data = {
+                "subscription_status": "active",
+                "subscription_plan_id": plan_id,
+            }
+            if subscription_id:
+                update_data["stripe_subscription_id"] = subscription_id
+
+            supabase.table("businesses").update(update_data).eq("id", business_id).execute()
+
+            # Kreiraj/resetiraj subscription row za usage tracking
+            ensure_subscription_row(business_id, request_limit)
+
+    # ─── SUBSCRIPTION CREATED ───
+    elif event_type == "customer.subscription.created":
         subscription = event["data"]["object"]
         customer_id = subscription["customer"]
 
-        supabase.table("businesses").update({
-            "subscription_status": subscription["status"],
-            "stripe_subscription_id": subscription["id"]
-        }).eq("stripe_customer_id", customer_id).execute()
+        business = get_business_by_customer(customer_id)
+        if business:
+            supabase.table("businesses").update({
+                "subscription_status": subscription["status"],
+                "stripe_subscription_id": subscription["id"]
+            }).eq("id", business["id"]).execute()
 
-    elif event["type"] in ["customer.subscription.updated", "customer.subscription.deleted"]:
+    # ─── SUBSCRIPTION UPDATED / DELETED ───
+    elif event_type in ["customer.subscription.updated", "customer.subscription.deleted"]:
         subscription = event["data"]["object"]
         customer_id = subscription["customer"]
 
-        supabase.table("businesses").update({
-            "subscription_status": subscription["status"],
-            "stripe_subscription_id": subscription["id"]
-        }).eq("stripe_customer_id", customer_id).execute()
+        status = subscription["status"]
+        if event_type == "customer.subscription.deleted":
+            status = "cancelled"
 
-    elif event["type"] == "invoice.payment_succeeded":
+        business = get_business_by_customer(customer_id)
+        if business:
+            supabase.table("businesses").update({
+                "subscription_status": status,
+                "stripe_subscription_id": subscription["id"]
+            }).eq("id", business["id"]).execute()
+
+    # ─── INVOICE PAID ───
+    elif event_type == "invoice.payment_succeeded":
+        invoice = event["data"]["object"]
+        customer_id = invoice["customer"]
+        subscription_id = invoice.get("subscription")
+
+        business = get_business_by_customer(customer_id)
+        if business:
+            supabase.table("businesses").update({
+                "subscription_status": "active"
+            }).eq("id", business["id"]).execute()
+
+            # Ako je recurring payment (ne prvi), resetiraj usage
+            if invoice.get("billing_reason") == "subscription_cycle":
+                plan_id = business.get("subscription_plan_id")
+                if plan_id:
+                    try:
+                        plan = get_plan(plan_id)
+                        request_limit = plan.get("request_limit", 0)
+                        ensure_subscription_row(business["id"], request_limit)
+                    except Exception:
+                        pass
+
+    # ─── PAYMENT FAILED ───
+    elif event_type == "invoice.payment_failed":
         invoice = event["data"]["object"]
         customer_id = invoice["customer"]
 
-        supabase.table("businesses").update({
-            "subscription_status": "active"
-        }).eq("stripe_customer_id", customer_id).execute()
+        business = get_business_by_customer(customer_id)
+        if business:
+            supabase.table("businesses").update({
+                "subscription_status": "past_due"
+            }).eq("id", business["id"]).execute()
 
     return {"status": "success"}
