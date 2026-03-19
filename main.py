@@ -8,7 +8,19 @@ from stripe_service import router as stripe_router
 
 
 app = FastAPI()
-app.include_router(stripe_router, prefix="/api")
+app.include_router(stripe_router, prefix="/api") 
+
+@app.get("/debug")
+def debug():
+    import os
+    import stripe
+    key = os.getenv("STRIPE_SECRET_KEY", "NOT_FOUND")
+    stripe.api_key = key
+    try:
+        price = stripe.Price.retrieve("price_1SxrbdKCvXDoo1ndLif41GvY")
+        return {"key_start": key[:20], "price_found": True}
+    except Exception as e:
+        return {"key_start": key[:20], "error": str(e)}
 
 # ========================
 # Utils
